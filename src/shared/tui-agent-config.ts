@@ -243,8 +243,9 @@ const TUI_AGENT_CONFIG_SOURCE: Record<TuiAgent, TuiAgentConfigSource> = {
     detectCmd: 'freebuff',
     launchCmd: 'freebuff',
     expectedProcess: 'freebuff',
-    // Why: Freebuff is built on Codebuff's open framework (CodebuffAI/freebuff),
-    // so it shares the same bare-TUI + paste-after-start contract.
+    // Why: captured PTY shows a bare alt-screen TUI whose prompt box ("Enter a
+    // coding task or / for commands") takes pasted stdin, so the prompt can't
+    // ride argv. A modal model picker owns the screen until one is chosen.
     promptInjectionMode: 'stdin-after-start'
   },
   'command-code': {
