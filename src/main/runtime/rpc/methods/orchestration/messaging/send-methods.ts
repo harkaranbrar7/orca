@@ -1,4 +1,4 @@
-import { defineMethod, type RpcMethod } from '../../../core'
+import { defineMethod } from '../../../core'
 import { OrchestrationError } from '../../../../orchestration/orchestration-error'
 import { isGroupAddress } from '../../../../orchestration/groups'
 import { orchestrationSkillRecoveryData } from '../../../../../../shared/orchestration-rpc-contract'
@@ -19,8 +19,9 @@ import { sendRemoteMessage } from './send-remote'
 import { sendPointToPointMessage } from './send-point-to-point'
 import { sendGroupMessage } from './send-group'
 import { sendFederatedControlMail } from './send-control-mail'
+import { orchestrationCallerIdentity } from '../runs/run-scope'
 
-export const ORCHESTRATION_SEND_METHODS: RpcMethod[] = [
+export const ORCHESTRATION_SEND_METHODS = [
   defineMethod({
     name: 'orchestration.send',
     params: SendParams,
@@ -35,6 +36,7 @@ export const ORCHESTRATION_SEND_METHODS: RpcMethod[] = [
         recordMutationReceipt,
         markWorkerDoneMutationEffectFree,
         replayedMutationReceipt,
+        orchestrationCaller,
         signal
       }
     ) => {
@@ -59,7 +61,12 @@ export const ORCHESTRATION_SEND_METHODS: RpcMethod[] = [
           ? orchestrationCompatibilityCallerAuthority
           : undefined
       // Why: attested hook identity survives graph remount; caller params never supply lifecycle authority.
-      const senderPaneKey = attestedCaller?.paneKey ?? runtime.getTerminalPaneKey(from) ?? undefined
+      const sender = orchestrationCallerIdentity(runtime, {
+        handle: from,
+        session: orchestrationCaller,
+        paneKey: attestedCaller?.paneKey ?? runtime.getTerminalPaneKey(from)
+      })
+      const senderPaneKey = sender.paneKey ?? undefined
       const remoteAttachment = senderPaneKey
         ? db.findActiveRemoteAttachmentForPane(senderPaneKey)
         : undefined
@@ -80,12 +87,14 @@ export const ORCHESTRATION_SEND_METHODS: RpcMethod[] = [
         })
       }
 
+      const runGroup =
+        params.to && isGroupAddress(params.to) && !params.to.toLowerCase().startsWith('@worktree:')
+      // Run groups validate their own audience; message scope cannot select a parent Dispatch.
       const routing = resolveMessageRun(runtime, {
-        from,
-        senderPaneKey,
+        sender,
         to: params.to,
-        runId: params.run,
-        payload: params.payload
+        runId: runGroup ? undefined : params.run,
+        payload: runGroup ? undefined : params.payload
       })
       if (
         params.type === 'worker_done' &&
@@ -196,6 +205,7 @@ export const ORCHESTRATION_SEND_METHODS: RpcMethod[] = [
         db,
         from,
         groupAddress: to,
+        sender,
         senderPaneKey,
         senderRunId: routing.run?.id,
         explicitRunId: params.run,
